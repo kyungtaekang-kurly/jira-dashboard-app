@@ -5,10 +5,21 @@
   "windows": ["main"],
   "permissions": [
     "core:default",
+    "opener:default",
+    "shell:allow-open",
     "http:default",
     {
       "identifier": "http:allow-fetch",
-      "allow": [{ "url": "https://*.atlassian.net/*" }]
-    }
+      "allow": [
+        { "url": "https://kurly0521.atlassian.net/**" }
+      ]
+    },
+    {
+      "identifier": "http:allow-fetch-send",
+      "allow": [
+        { "url": "https://kurly0521.atlassian.net/**" }
+      ]
+    },
+    "http:allow-fetch-read-body"
   ]
 }
