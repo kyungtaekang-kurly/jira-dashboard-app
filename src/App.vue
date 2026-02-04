@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue';
 import { fetch } from '@tauri-apps/plugin-http';
-import { open } from '@tauri-apps/plugin-shell'; // 브라우저 오픈을 위해 추가
+import { open } from '@tauri-apps/plugin-shell';
 
 // --- 1. 상태 관리 ---
 const currentTab = ref<'epic' | 'idea'>('idea');
@@ -9,77 +9,96 @@ const tickets = ref<any[]>([]);
 const epicInfo = ref<any>(null);
 const isLoading = ref(false);
 
+// 필터 상태 (함수 밖으로 이동)
+const selectedStatus = ref<string>('all');
+const selectedTeam = ref<string>('전체 조직');
+
 // --- 2. 설정 정보 ---
 const JIRA_DOMAIN = 'kurly0521.atlassian.net';
 const EMAIL = 'kyungtae.kang@kurlycorp.com';
 const API_TOKEN = 'ATATT3xFfGF0uau1DjgfL7syTIzmBWZ_TnyMHRHG_MUw1qaEPLTOqL_1Wl7tWCngv4JrP2-Nsa6WpK2YRS3gZAXqFamzC_jqS-CqG1WordzHRg85zBz7zb0sPXy5JTbcwFNO87bCSmkHeq2mEX25cCHSaYTvEyYYa1r2scBe7DXJ13E04lCSDTE=8D988A7E';
 const EPIC_KEY = 'FPP-72';
 const authHeader = btoa(`${EMAIL}:${API_TOKEN}`);
+const ORG_FIELD = 'customfield_20061'; // 수행조직 필드 ID
 
-// --- 3. 브라우저 오픈 기능 ---
-const openJiraIssue = async (key: string) => {
-  try {
-    const url = `https://${JIRA_DOMAIN}/browse/${key}`;
-    await open(url);
-  } catch (error) {
-    console.error('브라우저 열기 실패:', error);
-  }
-};
+// --- 3. 필터링 로직 (Computed) ---
 
-// --- 4. 데이터 로드 로직 (성공한 GET 방식) ---
+// 1. 상태값 목록 추출
+const availableStatuses = computed(() => {
+  const statuses = tickets.value.map(t => t.fields?.status?.name).filter(Boolean);
+  return ['all', ...new Set(statuses)];
+});
+
+// 2. 조직 목록 추출
+const availableTeams = computed(() => {
+  const teams = tickets.value.map(t => {
+    const val = t.fields?.[ORG_FIELD];
+    if (Array.isArray(val)) return val[0]?.value;
+    return val?.value || val;
+  }).filter(Boolean);
+  return ['전체 조직', ...new Set(teams)];
+});
+
+// 3. 통합 필터링 결과
+const filteredTickets = computed(() => {
+  return tickets.value.filter(t => {
+    // 상태 매칭
+    const statusMatch = selectedStatus.value === 'all' || t.fields?.status?.name === selectedStatus.value;
+    // 조직 매칭
+    const orgVal = t.fields?.[ORG_FIELD];
+    const teamName = Array.isArray(orgVal) ? orgVal[0]?.value : (orgVal?.value || orgVal);
+    const teamMatch = selectedTeam.value === '전체 조직' || teamName === selectedTeam.value;
+
+    return statusMatch && teamMatch;
+  });
+});
+
+// --- 4. 데이터 로드 로직 ---
 const loadData = async () => {
   isLoading.value = true;
   tickets.value = [];
+  selectedStatus.value = 'all'; // 초기화
+  selectedTeam.value = '전체 조직';
 
   try {
-    let jqlString = "";
-    const fields = "summary,status,issuetype,assignee,priority";
+    let jqlString = currentTab.value === 'epic'
+        ? `parent=${EPIC_KEY} ORDER BY status ASC, created DESC`
+        : "project = FPP ORDER BY created DESC";
 
-    if (currentTab.value === 'epic') {
-      jqlString = `parent=${EPIC_KEY} ORDER BY status ASC, created DESC`;
-      const epicRes = await fetch(`https://${JIRA_DOMAIN}/rest/api/3/issue/${EPIC_KEY}`, {
-        method: 'GET',
-        headers: { 'Authorization': `Basic ${authHeader}`, 'Accept': 'application/json' }
-      });
-      epicInfo.value = await epicRes.json();
-    } else {
-      // 사용자님께서 성공하신 JQL 쿼리
-      jqlString = "project = FPP ORDER BY created DESC";
-      epicInfo.value = { fields: { summary: 'Jira Idea Explorer' } };
-    }
-
-    const queryParams = new URLSearchParams({
-      jql: jqlString,
-      fields: fields,
-      maxResults: '100'
-    });
-
+    const fields = `summary,status,issuetype,assignee,priority,${ORG_FIELD}`;
+    const queryParams = new URLSearchParams({ jql: jqlString, fields: fields, maxResults: '100' });
     const fullUrl = `https://${JIRA_DOMAIN}/rest/api/3/search/jql?${queryParams.toString()}`;
 
     const response = await fetch(fullUrl, {
       method: 'GET',
-      headers: {
-        'Authorization': `Basic ${authHeader}`,
-        'Accept': 'application/json'
-      }
+      headers: { 'Authorization': `Basic ${authHeader}`, 'Accept': 'application/json' }
     });
-
-    if (!response.ok) {
-      const errorMsg = await response.text();
-      throw new Error(`API 오류: ${response.status} - ${errorMsg}`);
-    }
 
     const data: any = await response.json();
     tickets.value = data.issues || [];
 
-  } catch (error: any) {
-    console.error('데이터 로드 실패:', error);
+    // 에픽 정보 별도 로드
+    if (currentTab.value === 'epic') {
+      const epicRes = await fetch(`https://${JIRA_DOMAIN}/rest/api/3/issue/${EPIC_KEY}`, {
+        method: 'GET',
+        headers: { 'Authorization': `Basic ${authHeader}` }
+      });
+      epicInfo.value = await epicRes.json();
+    } else {
+      epicInfo.value = { fields: { summary: 'Jira Idea Explorer' } };
+    }
+  } catch (error) {
+    console.error('로드 실패:', error);
   } finally {
     isLoading.value = false;
   }
 };
 
-// --- 5. 유틸리티 함수 ---
+const openJiraIssue = async (key: string) => {
+  const url = `https://${JIRA_DOMAIN}/browse/${key}`;
+  await open(url);
+};
+
 const switchTab = (tab: 'epic' | 'idea') => {
   currentTab.value = tab;
   loadData();
@@ -94,10 +113,10 @@ const getStatusClass = (statusName: string) => {
 };
 
 const stats = computed(() => {
-  const total = tickets.value.length;
+  const total = filteredTickets.value.length;
   if (total === 0) return { total: 0, done: 0, percent: 0 };
-  const doneCount = tickets.value.filter(t =>
-      ['완료', 'done', 'shipped'].some(s => (t.fields?.status?.name || '').toLowerCase().includes(s))
+  const doneCount = filteredTickets.value.filter(t =>
+      ['완료', 'done'].some(s => (t.fields?.status?.name || '').toLowerCase().includes(s))
   ).length;
   return { total, done: doneCount, percent: Math.round((doneCount / total) * 100) };
 });
@@ -108,7 +127,7 @@ onMounted(() => loadData());
 <template>
   <div class="app-layout">
     <aside class="sidebar">
-      <div class="sidebar-brand">Atmos</div>
+      <div class="sidebar-brand">컬리지라(Kurly Jira)</div>
       <nav class="nav-menu">
         <div class="nav-item" :class="{ active: currentTab === 'epic' }" @click="switchTab('epic')">📋 Epic Explorer</div>
         <div class="nav-item" :class="{ active: currentTab === 'idea' }" @click="switchTab('idea')">💡 Idea Explorer</div>
@@ -118,81 +137,251 @@ onMounted(() => loadData());
     <main class="main-container">
       <header class="main-header">
         <div class="header-left">
-          <span v-if="epicInfo" class="type-badge">{{ currentTab }}</span>
-          <h2 class="title-text">{{ epicInfo?.fields?.summary || 'Atmos Jira Dashboard' }}</h2>
+          <h2 class="title-text">{{ epicInfo?.fields?.summary || 'Loading...' }}</h2>
         </div>
-        <button @click="loadData" :disabled="isLoading" class="btn-refresh">
-          {{ isLoading ? '동기화 중...' : '🔄 데이터 업데이트' }}
-        </button>
+        <div class="header-actions">
+          <select v-model="selectedTeam" class="status-filter">
+            <option v-for="team in availableTeams" :key="team" :value="team">{{ team }}</option>
+          </select>
+          <select v-model="selectedStatus" class="status-filter">
+            <option value="all">모든 상태 ({{ tickets.length }})</option>
+            <option v-for="status in availableStatuses.filter(s => s !== 'all')" :key="status" :value="status">{{ status }}</option>
+          </select>
+          <button @click="loadData" :disabled="isLoading" class="btn-refresh">🔄 업데이트</button>
+        </div>
       </header>
 
-      <div class="summary-bar" v-if="tickets.length > 0">
-        <div class="summary-info">Total <strong>{{ stats.total }}</strong> | Done <strong>{{ stats.done }}</strong></div>
+      <div class="summary-bar" v-if="filteredTickets.length > 0">
+        <div class="summary-info">Filtered <strong>{{ stats.total }}</strong> | Done <strong>{{ stats.done }}</strong></div>
         <div class="progress-track"><div class="progress-fill" :style="{ width: stats.percent + '%' }"></div></div>
         <div class="percent-tag">{{ stats.percent }}%</div>
       </div>
 
       <section class="content-body">
-        <table v-if="tickets.length > 0" class="jira-table">
+        <table v-if="filteredTickets.length > 0" class="jira-table">
           <thead>
-          <tr><th>KEY</th><th>SUMMARY</th><th>STATUS</th><th>ASSIGNEE</th></tr>
+          <tr>
+            <th style="width: 100px;">KEY</th>
+            <th style="width: 140px;">수행조직</th> <th>SUMMARY</th>
+            <th style="width: 120px;">STATUS</th>
+            <th style="width: 140px;">ASSIGNEE</th>
+          </tr>
           </thead>
           <tbody>
-          <tr
-              v-for="ticket in tickets"
-              :key="ticket.id"
-              @click="openJiraIssue(ticket.key)"
-              class="ticket-row clickable-row"
-          >
+          <tr v-for="ticket in filteredTickets" :key="ticket.id" @click="openJiraIssue(ticket.key)" class="ticket-row clickable-row">
             <td class="td-key">{{ ticket.key }}</td>
+            <td class="td-team">
+                <span class="team-tag">
+                  {{ Array.isArray(ticket.fields?.[ORG_FIELD]) ? ticket.fields?.[ORG_FIELD][0]?.value : (ticket.fields?.[ORG_FIELD]?.value || '-') }}
+                </span>
+            </td>
             <td class="td-summary">{{ ticket.fields?.summary }}</td>
-            <td><span :class="['badge', getStatusClass(ticket.fields?.status?.name)]">{{ ticket.fields?.status?.name || 'Unknown' }}</span></td>
+            <td><span :class="['badge', getStatusClass(ticket.fields?.status?.name)]">{{ ticket.fields?.status?.name }}</span></td>
             <td class="td-user"><div class="user-pill">{{ ticket.fields?.assignee?.displayName || '-' }}</div></td>
           </tr>
           </tbody>
         </table>
-        <div v-else-if="!isLoading" class="empty-state">조회된 티켓이 없습니다.</div>
       </section>
     </main>
   </div>
 </template>
 
 <style>
-:root { --sidebar-width: 220px; --primary: #0052cc; }
-body { margin: 0; font-family: -apple-system, sans-serif; overflow: hidden; background: white; }
-.app-layout { display: flex; width: 100vw; height: 100vh; }
+:root {
+  --sidebar-width: 240px;
+  /* 컬리 공식 브랜드 컬러 */
+  --kurly-purple: #5f0080;
+  --kurly-purple-light: #8900b3;
+  --kurly-purple-bg: #f7f0fa;
+  --primary-text: #333333;
+  --white: #ffffff;
+}
+body {
+  margin: 0;
+  font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, system-ui, Roboto, sans-serif;
+  overflow: hidden;
+  background-color: var(--white);
+  color: var(--primary-text);
+}
 
-.sidebar { width: var(--sidebar-width); background: #0747a6; color: white; display: flex; flex-direction: column; flex-shrink: 0; }
-.sidebar-brand { padding: 24px; font-size: 1.5rem; font-weight: 800; }
-.nav-item { padding: 12px 16px; margin: 2px 10px; border-radius: 6px; cursor: pointer; font-size: 0.9rem; }
-.nav-item.active { background: rgba(255,255,255,0.2); font-weight: bold; }
+.app-layout {
+  display: flex;
+  width: 100vw;
+  height: 100vh;
+}
 
-.main-container { flex-grow: 1; display: flex; flex-direction: column; overflow: hidden; background: white; }
-.main-header { padding: 20px 32px; border-bottom: 1px solid #dfe1e6; display: flex; align-items: center; justify-content: space-between; }
-.type-badge { background: #4c9aff; color: white; padding: 2px 6px; border-radius: 4px; font-size: 0.65rem; font-weight: bold; text-transform: uppercase; margin-right: 12px; }
-.title-text { margin: 0; font-size: 1.2rem; color: #172b4d; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* 사이드바: 컬리 보라색 적용 */
+.sidebar {
+  width: var(--sidebar-width);
+  background: var(--kurly-purple);
+  color: var(--white);
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  box-shadow: 2px 0 10px rgba(0, 0, 0, 0.1);
+}
+.sidebar-brand {
+  padding: 30px 24px;
+  font-size: 1.2rem;
+  font-weight: 700;
+  letter-spacing: -0.5px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+.nav-menu {
+  padding: 20px 0;
+}
+.nav-item {
+  padding: 14px 24px;
+  margin: 4px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 0.95rem;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+nav-item:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
 
-.summary-bar { padding: 12px 32px; background: #fafbfc; display: flex; align-items: center; gap: 16px; border-bottom: 1px solid #dfe1e6; }
-.progress-track { flex: 1; height: 8px; background: #ebecf0; border-radius: 4px; overflow: hidden; }
-.progress-fill { height: 100%; background: #36b37e; transition: width 0.5s ease; }
-.percent-tag { color: #36b37e; font-weight: bold; }
+.nav-item.active {
+  background: var(--white);
+  color: var(--kurly-purple);
+  font-weight: 700;
+}
 
-.content-body { flex: 1; overflow-y: auto; padding: 0 32px 32px; }
-.jira-table { width: 100%; border-collapse: collapse; }
-.jira-table th { text-align: left; font-size: 0.75rem; color: #6b778c; padding: 12px; border-bottom: 2px solid #dfe1e6; position: sticky; top: 0; background: white; z-index: 10; }
-.jira-table td { padding: 12px; border-bottom: 1px solid #f4f5f7; font-size: 0.9rem; }
-.td-key { color: var(--primary); font-weight: bold; }
+/* 메인 컨텐츠 영역 */
+.main-container {
+  flex-grow: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--kurly-purple-bg); /* 연한 보라색 배경 */
+}
 
-/* 클릭 효과 */
-.clickable-row { cursor: pointer; transition: background-color 0.15s; }
-.clickable-row:hover { background-color: #f4f5f7; }
-.clickable-row:hover .td-key { text-decoration: underline; }
+main-header {
+  padding: 24px 40px;
+  background: var(--white);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid #e2e2e2;
+}
+.title-text {
+  margin: 0;
+  font-size: 1.4rem;
+  font-weight: 700;
+  color: var(--kurly-purple);
+}
 
-.badge { padding: 4px 8px; border-radius: 3px; font-size: 0.75rem; font-weight: bold; }
-.status-todo { background: #dfe1e6; color: #42526e; }
-.status-inprogress { background: #deebff; color: #0052cc; }
+/* 새로고침 버튼 */
+.btn-refresh {
+  background: var(--kurly-purple);
+  color: var(--white);
+  border: none;
+  padding: 10px 20px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 600;
+  transition: background 0.2s;
+}
+
+.btn-refresh:hover {
+  background: var(--kurly-purple-light);
+}
+
+.btn-refresh:disabled {
+  background: #ccc;
+}
+
+/* 요약 바 & 진행률 */
+.summary-bar {
+  padding: 15px 40px;
+  background: var(--white);
+  margin: 20px 40px 0;
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+
+.progress-track {
+  flex: 1;
+  height: 10px;
+  background: #eee;
+  border-radius: 5px;
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  background: var(--kurly-purple); /* 진행바도 컬리 퍼플 */
+  transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* 테이블 디자인 */
+.content-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px 40px 40px;
+}
+
+.jira-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  background: var(--white);
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+}
+
+.jira-table th {
+  background: #fdfdfd;
+  color: #666;
+  font-weight: 400;
+  text-transform: uppercase;
+  font-size: 0.75rem;
+  padding: 10px;
+  border-bottom: 1px solid #eee;
+  text-align: left;
+}
+
+.jira-table td {
+  padding: 10px;
+  border-bottom: 1px solid #f9f9f9;
+  font-size: 0.9rem;
+}
+
+.td-summary {
+  max-width: 400px;         /* 적절한 최대 너비를 설정하세요 */
+  white-space: nowrap;      /* 줄바꿈 금지 */
+  overflow: hidden;         /* 넘치는 부분 숨김 */
+  text-overflow: ellipsis;  /* 말줄임표(...) 표시 */
+}
+
+.clickable-row:hover {
+  background-color: #fcf8ff; /* 마우스 오버 시 아주 연한 보라색 */
+}
+
+/* 상태 배지 */
+.badge {
+  padding: 4px 10px;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.status-todo { background: #eee; color: #666; }
+.status-inprogress { background: #e8f0fe; color: #1a73e8; }
 .status-done { background: #e3fcef; color: #006644; }
 
+.td-key {
+  color: var(--kurly-purple);
+  font-weight: 400;
+}
 .btn-refresh { background: var(--primary); color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; font-weight: 600; }
 .user-pill { display: inline-block; padding: 2px 8px; background: #f4f5f7; border-radius: 12px; font-size: 0.8rem; }
 .empty-state { padding-top: 100px; text-align: center; color: #6b778c; }
