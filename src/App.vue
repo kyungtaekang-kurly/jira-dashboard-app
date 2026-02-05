@@ -57,27 +57,61 @@ const filteredTickets = computed(() => {
 const loadData = async () => {
   isLoading.value = true;
   tickets.value = [];
-  selectedStatus.value = 'all'; // 초기화
-  selectedTeam.value = '전체 조직';
 
   try {
-    let jqlString = currentTab.value === 'epic'
-        ? `parent=${EPIC_KEY} ORDER BY status ASC, created DESC`
-        : "project = FPP ORDER BY created DESC";
-
+    const targetTeams = ["재고", "입고", "발주", "상품"];
+    let allIssues: any[] = [];
     const fields = `summary,status,issuetype,assignee,priority,${ORG_FIELD}`;
-    const queryParams = new URLSearchParams({ jql: jqlString, fields: fields, maxResults: '100' });
-    const fullUrl = `https://${JIRA_DOMAIN}/rest/api/3/search/jql?${queryParams.toString()}`;
 
-    const response = await fetch(fullUrl, {
-      method: 'GET',
-      headers: { 'Authorization': `Basic ${authHeader}`, 'Accept': 'application/json' }
-    });
+    for (const teamName of targetTeams) {
+      // 1. JQL 문법 수정: cf[ID] 대신 customfield_ID 사용
+      // 2. 검색 연산자: '~'(포함)은 인덱싱 지연이 있을 수 있으니 'IN' 또는 '=' 시도
+      const teamJql = `project = FPP AND customfield_20061 = "${teamName}" ORDER BY created DESC`;
 
-    const data: any = await response.json();
-    tickets.value = data.issues || [];
+      const queryParams = new URLSearchParams({
+        jql: teamJql,
+        fields: fields,
+        maxResults: "100"
+      });
 
-    // 에픽 정보 별도 로드
+      const fullUrl = `https://${JIRA_DOMAIN}/rest/api/3/search/jql?${queryParams.toString()}`;
+
+      const response = await fetch(fullUrl, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Basic ${authHeader}`,
+          'Accept': 'application/json'
+        }
+      });
+
+      if (response.ok) {
+        const data: any = await response.json();
+        const issues = data.issues || [];
+        console.log(`[확인] ${teamName} 조직 결과: ${issues.length}건`);
+        allIssues = [...allIssues, ...issues];
+      }
+    }
+
+    // 만약 조직별 데이터가 하나도 없다면, 안전장치로 전체 프로젝트 100개 로드
+    if (allIssues.length === 0) {
+      console.warn("조직별 데이터를 찾지 못해 전체 데이터를 로드합니다.");
+      const fallbackUrl = `https://${JIRA_DOMAIN}/rest/api/3/search/jql?jql=project=FPP ORDER BY created DESC&maxResults=300&fields=${fields}`;
+      const res = await fetch(fallbackUrl, {
+        method: 'GET',
+        headers: { 'Authorization': `Basic ${authHeader}` }
+      });
+      if (res.ok) {
+        const data: any = await res.json();
+        allIssues = data.issues || [];
+      }
+    }
+
+    // 중복 제거 후 할당
+    tickets.value = Array.from(
+        new Map(allIssues.map(issue => [issue.key, issue])).values()
+    );
+
+    // 에픽 정보 처리 (생략되지 않도록 유지)
     if (currentTab.value === 'epic') {
       const epicRes = await fetch(`https://${JIRA_DOMAIN}/rest/api/3/issue/${EPIC_KEY}`, {
         method: 'GET',
@@ -87,8 +121,9 @@ const loadData = async () => {
     } else {
       epicInfo.value = { fields: { summary: 'Jira Idea Explorer' } };
     }
+
   } catch (error) {
-    console.error('로드 실패:', error);
+    console.error('데이터 로드 중 치명적 오류:', error);
   } finally {
     isLoading.value = false;
   }
@@ -382,7 +417,7 @@ main-header {
   color: var(--kurly-purple);
   font-weight: 400;
 }
-.btn-refresh { background: var(--primary); color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; font-weight: 600; }
+.btn-refresh { color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; font-weight: 600; }
 .user-pill { display: inline-block; padding: 2px 8px; background: #f4f5f7; border-radius: 12px; font-size: 0.8rem; }
 .empty-state { padding-top: 100px; text-align: center; color: #6b778c; }
 </style>
