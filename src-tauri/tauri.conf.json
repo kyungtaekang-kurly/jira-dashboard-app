@@ -35,7 +35,7 @@
   },
   "plugins": {
     "updater": {
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDM3NEU2RjM0RUQ2QkU2RUIKUldUcjVtdnRORzlPTis2WWVlWmxJQnhlZVlIVG9qNUdWOUVJTUNFMVkvNzBwcGVrQ2ZkdDlGcTEK",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDY1OEZBOUIyNTIyRDcwMzUKUldRMWNDMVNzcW1QWldEdFhhT0kxdmFHclpOZk5OaHNjeC80RkRsdGlmTDB1bHUreHZ3Tis1d1oK",
       "endpoints": [
         "https://github.com/kyungtaekang-kurly/jira-dashboard-app/releases/latest/download/latest.json"
       ]
