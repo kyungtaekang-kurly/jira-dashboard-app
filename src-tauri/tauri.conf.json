@@ -30,6 +30,15 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "createUpdaterArtifacts": true
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDM3NEU2RjM0RUQ2QkU2RUIKUldUcjVtdnRORzlPTis2WWVlWmxJQnhlZVlIVG9qNUdWOUVJTUNFMVkvNzBwcGVrQ2ZkdDlGcTEK",
+      "endpoints": [
+        "https://github.com/kyungtaekang-kurly/jira-dashboard-app/releases/latest/download/latest.json"
+      ]
+    }
   }
 }

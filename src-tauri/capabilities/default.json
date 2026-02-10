@@ -20,6 +20,9 @@
         { "url": "https://kurly0521.atlassian.net/**" }
       ]
     },
-    "http:allow-fetch-read-body"
+    "http:allow-fetch-read-body",
+    "updater:default",
+    "dialog:default",
+    "process:allow-restart"
   ]
 }

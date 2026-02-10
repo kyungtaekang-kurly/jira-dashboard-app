@@ -2,6 +2,7 @@
 import { ref, computed, onMounted } from 'vue';
 import { fetch } from '@tauri-apps/plugin-http';
 import { open } from '@tauri-apps/plugin-shell';
+import { checkForUpdates } from './update-checker.js';
 
 // --- 1. 상태 관리 ---
 const currentTab = ref<'epic' | 'idea'>('idea');
@@ -442,7 +443,10 @@ const highlightText = (text: string, query: string) => {
   return text.replace(regex, '<mark class="highlight">$1</mark>');
 };
 
-onMounted(() => loadData());
+onMounted(() => {
+  loadData();
+  checkForUpdates();
+});
 </script>
 
 <template>
