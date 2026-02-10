@@ -135,3 +135,26 @@
  2. v0.1.0 태그 push → GitHub Actions 빌드 성공 + Release 생성 확인
  3. v0.2.0 버전업 후 태그 push → v0.1.0 앱에서 업데이트 다이얼로그 표시 확인
 ╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌
+
+
+it에ㅔpush는 여러번 하고 git의 release를 새로 생성하면, 그때
+  github action 자동 실행하는 것으로 변경해줘.
+
+⏺ GitHub Actions 트리거를 "Release 생성 시"로 변경하겠습니다.
+
+
+ 변경 완료. 주요 변경 사항:
+
+  - 트리거: push tags: v* → release: types: [created]
+  - releaseId 추가: 이미 생성된 Release에 빌드 아티팩트(DMG, .app.tar.gz, .sig, latest.json)를 업로드
+  - tagName, releaseName, releaseBody: Release 생성 시 입력한 값을 그대로 사용
+
+  변경된 릴리스 프로세스
+
+  1. 코드 수정 → git push (여러 번 자유롭게)
+  2. 준비되면 GitHub 사이트 > Releases > "Create a new release"
+     - Tag: v0.2.0 (새 태그 생성)
+     - Title: Kurly Jira v0.2.0
+     - Description: 변경 내용 작성
+     - "Publish release" 클릭
+  3. GitHub Actions 자동 실행 → DMG 빌드 → Release에 파일 첨부
