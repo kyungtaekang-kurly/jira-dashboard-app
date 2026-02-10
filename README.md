@@ -1,7 +1,26 @@
-# Tauri + Vue 3
+# Kurly Jira
 
-This template should help get you started developing with Tauri + Vue 3 in Vite. The template uses Vue 3 `<script setup>` SFCs, check out the [script setup docs](https://v3.vuejs.org/api/sfc-script-setup.html#sfc-script-setup) to learn more.
+Jira 프로젝트 대시보드 앱 (macOS)
 
-## Recommended IDE Setup
+## 다운로드
 
+| Apple Silicon (M1/M2/M3/M4) | Intel Mac |
+|:---:|:---:|
+| [Download DMG (aarch64)](https://github.com/kyungtaekang-kurly/jira-dashboard-app/releases/latest/download/Kurly.Jira_0.1.0_aarch64.dmg) | [Download DMG (x64)](https://github.com/kyungtaekang-kurly/jira-dashboard-app/releases/latest/download/Kurly.Jira_0.1.0_x64.dmg) |
+
+> 모든 릴리스 목록은 [Releases](https://github.com/kyungtaekang-kurly/jira-dashboard-app/releases) 페이지에서 확인할 수 있습니다.
+
+## 자동 업데이트
+
+앱 실행 시 새 버전이 있으면 업데이트 다이얼로그가 자동으로 표시됩니다.
+
+## 개발 환경
+
+- [Node.js](https://nodejs.org/) (LTS)
+- [Rust](https://www.rust-lang.org/)
 - [VS Code](https://code.visualstudio.com/) + [Vue - Official](https://marketplace.visualstudio.com/items?itemName=Vue.volar) + [Tauri](https://marketplace.visualstudio.com/items?itemName=tauri-apps.tauri-vscode) + [rust-analyzer](https://marketplace.visualstudio.com/items?itemName=rust-lang.rust-analyzer)
+
+```bash
+npm install
+npm run tauri dev
+```
