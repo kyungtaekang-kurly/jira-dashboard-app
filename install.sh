@@ -38,8 +38,7 @@ fi
 
 # DMG 마운트
 echo "설치 중..."
-hdiutil attach "$DMG_FILE" -nobrowse -quiet
-MOUNT_DIR="/Volumes/${APP_NAME}"
+MOUNT_DIR=$(hdiutil attach "$DMG_FILE" -nobrowse | grep "/Volumes/" | sed 's/.*\/Volumes/\/Volumes/')
 
 # 앱 복사
 cp -R "${MOUNT_DIR}/${APP_NAME}.app" /Applications/
