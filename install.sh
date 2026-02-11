@@ -38,7 +38,7 @@ fi
 
 # DMG 마운트
 echo "설치 중..."
-hdiutil attach "$DMG_FILE" -nobrowse 2>/dev/null
+hdiutil attach "$DMG_FILE" -nobrowse < /dev/null 2>/dev/null
 MOUNT_DIR=$(ls -d /Volumes/Kurly\ Jira* 2>/dev/null | head -1)
 
 if [ -z "$MOUNT_DIR" ]; then
