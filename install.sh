@@ -38,13 +38,14 @@ fi
 
 # DMG 마운트
 echo "설치 중..."
-MOUNT_DIR=$(hdiutil attach "$DMG_FILE" -nobrowse -quiet | tail -1 | awk -F'\t' '{print $3}')
+hdiutil attach "$DMG_FILE" -nobrowse -quiet
+MOUNT_DIR="/Volumes/${APP_NAME}"
 
 # 앱 복사
 cp -R "${MOUNT_DIR}/${APP_NAME}.app" /Applications/
 
 # DMG 언마운트
-hdiutil detach "$MOUNT_DIR" -quiet
+hdiutil detach "${MOUNT_DIR}" -quiet
 
 # Gatekeeper 우회
 xattr -cr "/Applications/${APP_NAME}.app"
