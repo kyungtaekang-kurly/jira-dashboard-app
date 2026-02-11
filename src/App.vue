@@ -23,7 +23,7 @@ const selectedTicketKey = ref('');
 // --- 2. 설정 정보 ---
 const JIRA_DOMAIN = 'kurly0521.atlassian.net';
 const EMAIL = 'kyungtae.kang@kurlycorp.com';
-const API_TOKEN = 'ATATT3xFfGF0uau1DjgfL7syTIzmBWZ_TnyMHRHG_MUw1qaEPLTOqL_1Wl7tWCngv4JrP2-Nsa6WpK2YRS3gZAXqFamzC_jqS-CqG1WordzHRg85zBz7zb0sPXy5JTbcwFNO87bCSmkHeq2mEX25cCHSaYTvEyYYa1r2scBe7DXJ13E04lCSDTE=8D988A7E';
+const API_TOKEN = 'ATATT3xFfGF0E0fJ9Md0skd3LdAw1qa7dHMXebL3ogaYzFWgx2bqKavQCdii7O7EEGfZHArMi6in1Yh-GDcEcRfxca2GBdzdPAJhKMwjDVdL0eZopB-AgJF413bRu3OGDgFi02w4-40b0SpCo8ea5zcxpZxyj0GZlKQdq5lvzkoOAqp582VGFms=B9707145';
 const EPIC_KEY = 'FPP-72';
 const authHeader = btoa(`${EMAIL}:${API_TOKEN}`);
 const ORG_FIELD = 'customfield_20061'; // 수행조직 필드 ID
@@ -88,7 +88,8 @@ const loadData = async () => {
         method: 'GET',
         headers: {
           'Authorization': `Basic ${authHeader}`,
-          'Accept': 'application/json'
+          'Accept': 'application/json',
+          'X-Atlassian-Token': 'no-check'
         }
       });
 
