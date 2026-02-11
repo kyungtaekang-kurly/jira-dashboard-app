@@ -38,13 +38,19 @@ fi
 
 # DMG 마운트
 echo "설치 중..."
-MOUNT_DIR=$(hdiutil attach "$DMG_FILE" -nobrowse | grep "/Volumes/" | sed 's/.*\/Volumes/\/Volumes/')
+hdiutil attach "$DMG_FILE" -nobrowse 2>/dev/null
+MOUNT_DIR=$(ls -d /Volumes/Kurly\ Jira* 2>/dev/null | head -1)
+
+if [ -z "$MOUNT_DIR" ]; then
+  echo "DMG 마운트에 실패했습니다."
+  exit 1
+fi
 
 # 앱 복사
 cp -R "${MOUNT_DIR}/${APP_NAME}.app" /Applications/
 
 # DMG 언마운트
-hdiutil detach "${MOUNT_DIR}" -quiet
+hdiutil detach "${MOUNT_DIR}" -quiet 2>/dev/null
 
 # Gatekeeper 우회
 xattr -cr "/Applications/${APP_NAME}.app"
