@@ -28,7 +28,7 @@ DMG_FILE="/tmp/${APP_NAME}_latest.dmg"
 
 # 다운로드
 echo "다운로드 중: ${DMG_URL}"
-curl -L -o "$DMG_FILE" "$DMG_URL"
+curl -L -o "$DMG_FILE" "$DMG_URL" < /dev/null
 
 # 기존 앱 제거
 if [ -d "/Applications/${APP_NAME}.app" ]; then
@@ -36,13 +36,19 @@ if [ -d "/Applications/${APP_NAME}.app" ]; then
   rm -rf "/Applications/${APP_NAME}.app"
 fi
 
+# 기존 마운트 해제
+for vol in /Volumes/Kurly\ Jira*; do
+  [ -d "$vol" ] && hdiutil detach "$vol" -quiet 2>/dev/null || true
+done
+
 # DMG 마운트
 echo "설치 중..."
-hdiutil attach "$DMG_FILE" -nobrowse < /dev/null 2>/dev/null
-MOUNT_DIR=$(ls -d /Volumes/Kurly\ Jira* 2>/dev/null | head -1)
+MOUNT_OUTPUT=$(hdiutil attach "$DMG_FILE" -nobrowse < /dev/null 2>&1)
+MOUNT_DIR=$(echo "$MOUNT_OUTPUT" | grep -o '/Volumes/.*' | head -1)
 
 if [ -z "$MOUNT_DIR" ]; then
   echo "DMG 마운트에 실패했습니다."
+  echo "$MOUNT_OUTPUT"
   exit 1
 fi
 
@@ -50,7 +56,7 @@ fi
 cp -R "${MOUNT_DIR}/${APP_NAME}.app" /Applications/
 
 # DMG 언마운트
-hdiutil detach "${MOUNT_DIR}" -quiet 2>/dev/null
+hdiutil detach "${MOUNT_DIR}" -quiet 2>/dev/null || true
 
 # Gatekeeper 우회
 xattr -cr "/Applications/${APP_NAME}.app"
@@ -59,5 +65,5 @@ xattr -cr "/Applications/${APP_NAME}.app"
 rm -f "$DMG_FILE"
 
 echo ""
-echo "✅ ${APP_NAME} 설치 완료!"
+echo "${APP_NAME} 설치 완료!"
 echo "Applications 폴더에서 실행하세요."
