@@ -15,7 +15,7 @@ const clearLog = () => { appLog.value = []; };
 const logText = computed(() => appLog.value.join('\n'));
 
 // --- 1. 상태 관리 ---
-const currentTab = ref<'epic' | 'idea' | 'log'>('idea');
+const currentTab = ref<'jira' | 'setting' | 'log'>('jira');
 const tickets = ref<any[]>([]);
 const epicInfo = ref<any>(null);
 const isLoading = ref(false);
@@ -32,11 +32,38 @@ const selectedTicketKey = ref('');
 
 // --- 2. 설정 정보 ---
 const JIRA_DOMAIN = 'kurly0521.atlassian.net';
-const EMAIL = 'kyungtae.kang@kurlycorp.com';
-// API_TOKEN_FOR_KURLY_JIRA
-const API_TOKEN = 'ATATT3xFfGF05a7i1qC6UT1KtZaop3bILIEpvNUPIzpNn70hnVJBmXWbxXfU5FW0M9PYG1L3GIIPg47KHo6i8sIb-VAhy4HRnMoGP6gdhp7TZFrKy-BBg_p4tU7zPuVUznuDRARVXkqZa2Z2v7oio-kx93JYxGzO_OmFHYK9Ip8HoOpoKC9JrzU=3B92C174';
+const userEmail = ref(localStorage.getItem('jira_email') || '');
+const userApiToken = ref(localStorage.getItem('jira_api_token') || '');
+const authHeader = computed(() => btoa(`${userEmail.value}:${userApiToken.value}`));
+const isSetupOpen = ref(false);
+const setupEmail = ref('');
+const setupApiToken = ref('');
+
+const isConfigured = computed(() => userEmail.value !== '' && userApiToken.value !== '');
+
+const saveSetup = () => {
+  if (!setupEmail.value.trim() || !setupApiToken.value.trim()) return;
+  userEmail.value = setupEmail.value.trim();
+  userApiToken.value = setupApiToken.value.trim();
+  localStorage.setItem('jira_email', userEmail.value);
+  localStorage.setItem('jira_api_token', userApiToken.value);
+  isSetupOpen.value = false;
+  log(`[설정] 인증 정보 저장 완료: ${userEmail.value}`);
+  loadData();
+};
+
+const resetCredentials = () => {
+  userEmail.value = '';
+  userApiToken.value = '';
+  localStorage.removeItem('jira_email');
+  localStorage.removeItem('jira_api_token');
+  setupEmail.value = '';
+  setupApiToken.value = '';
+  isSetupOpen.value = true;
+  log('[설정] 인증 정보 초기화됨');
+};
+
 const EPIC_KEY = 'FPP-72';
-const authHeader = btoa(`${EMAIL}:${API_TOKEN}`);
 const ORG_FIELD = 'customfield_20061'; // 수행조직 필드 ID
 const ASSIGNEE_FIELD = 'customfield_18564'; // 담당자용 커스텀 필드 ID 정의
 
@@ -81,7 +108,7 @@ const loadData = async () => {
     // 진단: 현재 사용자 정보 확인
     const meRes = await fetch(`https://${JIRA_DOMAIN}/rest/api/3/myself`, {
       method: 'GET',
-      headers: { 'Authorization': `Basic ${authHeader}`, 'Accept': 'application/json' }
+      headers: { 'Authorization': `Basic ${authHeader.value}`, 'Accept': 'application/json' }
     });
     if (meRes.ok) {
       const me: any = await meRes.json();
@@ -93,7 +120,7 @@ const loadData = async () => {
     // 진단: FPP 프로젝트 접근 확인
     const projRes = await fetch(`https://${JIRA_DOMAIN}/rest/api/3/project/FPP`, {
       method: 'GET',
-      headers: { 'Authorization': `Basic ${authHeader}`, 'Accept': 'application/json' }
+      headers: { 'Authorization': `Basic ${authHeader.value}`, 'Accept': 'application/json' }
     });
     if (projRes.ok) {
       const proj: any = await projRes.json();
@@ -122,7 +149,7 @@ const loadData = async () => {
       const response = await fetch(fullUrl, {
         method: 'GET',
         headers: {
-          'Authorization': `Basic ${authHeader}`,
+          'Authorization': `Basic ${authHeader.value}`,
           'Accept': 'application/json',
           'X-Atlassian-Token': 'no-check'
         }
@@ -150,7 +177,7 @@ const loadData = async () => {
       const fallbackUrl = `https://${JIRA_DOMAIN}/rest/api/3/search/jql?jql=project=FPP ORDER BY created DESC&maxResults=300&fields=${fields}`;
       const res = await fetch(fallbackUrl, {
         method: 'GET',
-        headers: { 'Authorization': `Basic ${authHeader}` }
+        headers: { 'Authorization': `Basic ${authHeader.value}` }
       });
       log(`[HTTP] 전체 데이터 폴백 → 상태: ${res.status} ${res.statusText}`);
       log(`[URL] ${fallbackUrl}`);
@@ -172,16 +199,7 @@ const loadData = async () => {
         new Map(allIssues.map(issue => [issue.key, issue])).values()
     );
 
-    // 에픽 정보 처리 (생략되지 않도록 유지)
-    if (currentTab.value === 'epic') {
-      const epicRes = await fetch(`https://${JIRA_DOMAIN}/rest/api/3/issue/${EPIC_KEY}`, {
-        method: 'GET',
-        headers: { 'Authorization': `Basic ${authHeader}` }
-      });
-      epicInfo.value = await epicRes.json();
-    } else {
-      epicInfo.value = { fields: { summary: 'Jira Idea Explorer' } };
-    }
+    epicInfo.value = { fields: { summary: 'Kurly Jira Dashboard' } };
 
   } catch (error) {
     log(`[치명적 오류] 데이터 로드 실패: ${error}`);
@@ -195,9 +213,9 @@ const openJiraIssue = async (key: string) => {
   await open(url);
 };
 
-const switchTab = (tab: 'epic' | 'idea' | 'log') => {
+const switchTab = (tab: 'jira' | 'setting' | 'log') => {
   currentTab.value = tab;
-  if (tab !== 'log') loadData();
+  if (tab === 'jira') loadData();
 };
 
 const getStatusClass = (statusName: string) => {
@@ -235,7 +253,7 @@ const loadAllSubTaskComments = async (ticket: any) => {
     try {
       const searchRes = await fetch(searchUrl, {
         method: 'GET',
-        headers: { 'Authorization': `Basic ${authHeader}`, 'Accept': 'application/json' }
+        headers: { 'Authorization': `Basic ${authHeader.value}`, 'Accept': 'application/json' }
       });
 
       if (searchRes.ok) {
@@ -252,7 +270,7 @@ const loadAllSubTaskComments = async (ticket: any) => {
       try {
         const res = await fetch(`https://${JIRA_DOMAIN}/rest/api/3/issue/${key}/comment`, {
           method: 'GET',
-          headers: { 'Authorization': `Basic ${authHeader}` }
+          headers: { 'Authorization': `Basic ${authHeader.value}` }
         });
         return res.ok ? await res.json() : { comments: [] };
       } catch (e) {
@@ -302,7 +320,7 @@ const getLinkedIssueKeys = async (ticketKey: string): Promise<string[]> => {
   try {
     const res = await fetch(`https://${JIRA_DOMAIN}/rest/api/3/issue/${ticketKey}?fields=issuelinks`, {
       method: 'GET',
-      headers: { 'Authorization': `Basic ${authHeader}` }
+      headers: { 'Authorization': `Basic ${authHeader.value}` }
     });
     if (!res.ok) return [];
     const data: any = await res.json();
@@ -356,7 +374,7 @@ const loadLinkedEpicComments = async (ticket: any) => {
     const searchUrl = `https://${JIRA_DOMAIN}/rest/api/3/search/jql?${queryParams.toString()}`;
     const searchRes = await fetch(searchUrl, {
       method: 'GET',
-      headers: { 'Authorization': `Basic ${authHeader}`, 'Accept': 'application/json' }
+      headers: { 'Authorization': `Basic ${authHeader.value}`, 'Accept': 'application/json' }
     });
 
     if (searchRes.ok) {
@@ -372,7 +390,7 @@ const loadLinkedEpicComments = async (ticket: any) => {
     const results = await Promise.all(finalKeys.map(async (key) => {
       const res = await fetch(`https://${JIRA_DOMAIN}/rest/api/3/issue/${key}/comment`, {
         method: 'GET',
-        headers: { 'Authorization': `Basic ${authHeader}` }
+        headers: { 'Authorization': `Basic ${authHeader.value}` }
       });
       return res.ok ? { key, data: await res.json() } : { key, data: { comments: [] } };
     }));
@@ -442,7 +460,7 @@ const loadTicketTree = async (rootTicket: any) => {
     const searchUrl = `https://${JIRA_DOMAIN}/rest/api/3/search/jql?${queryParams.toString()}`;
     const res = await fetch(searchUrl, {
       method: 'GET',
-      headers: { 'Authorization': `Basic ${authHeader}`, 'Accept': 'application/json' }
+      headers: { 'Authorization': `Basic ${authHeader.value}`, 'Accept': 'application/json' }
     });
 
     if (res.ok) {
@@ -497,7 +515,11 @@ const highlightText = (text: string, query: string) => {
 };
 
 onMounted(() => {
-  loadData();
+  if (!isConfigured.value) {
+    isSetupOpen.value = true;
+  } else {
+    loadData();
+  }
   checkForUpdates();
 });
 </script>
@@ -507,13 +529,13 @@ onMounted(() => {
     <aside class="sidebar">
       <div class="sidebar-brand">컬리지라(Kurly Jira)</div>
       <nav class="nav-menu">
-        <div class="nav-item" :class="{ active: currentTab === 'epic' }" @click="switchTab('epic')">📋 Epic Explorer</div>
-        <div class="nav-item" :class="{ active: currentTab === 'idea' }" @click="switchTab('idea')">💡 Idea Explorer</div>
+        <div class="nav-item" :class="{ active: currentTab === 'jira' }" @click="switchTab('jira')">📋 Jira</div>
+        <div class="nav-item" :class="{ active: currentTab === 'setting' }" @click="switchTab('setting')">⚙️ Setting</div>
         <div class="nav-item" :class="{ active: currentTab === 'log' }" @click="switchTab('log')">📝 Log</div>
       </nav>
     </aside>
 
-    <main class="main-container" v-if="currentTab !== 'log'">
+    <main class="main-container" v-if="currentTab === 'jira'">
       <header class="main-header">
         <div class="header-left">
           <h2 class="title-text">{{ epicInfo?.fields?.summary || 'Loading...' }}</h2>
@@ -583,6 +605,49 @@ onMounted(() => {
           </tbody>
         </table>
       </section>
+    </main>
+
+    <main class="main-container" v-if="currentTab === 'setting'">
+      <header class="main-header">
+        <div class="header-left">
+          <h2 class="title-text">Setting</h2>
+        </div>
+      </header>
+      <div class="setting-body">
+        <div class="setting-card">
+          <h3 class="setting-section-title">Jira 연결 설정</h3>
+          <div class="setting-row">
+            <label class="setting-label">Domain</label>
+            <div class="setting-value">{{ JIRA_DOMAIN }}</div>
+          </div>
+          <div class="setting-row">
+            <label class="setting-label">Email</label>
+            <div class="setting-value">{{ userEmail || '(미설정)' }}</div>
+          </div>
+          <div class="setting-row">
+            <label class="setting-label">API Token</label>
+            <div class="setting-value setting-token">{{ userApiToken ? userApiToken.substring(0, 20) + '...' + userApiToken.substring(userApiToken.length - 8) : '(미설정)' }}</div>
+          </div>
+          <div class="setting-row">
+            <label class="setting-label">Project</label>
+            <div class="setting-value">FPP</div>
+          </div>
+          <div class="setting-actions">
+            <button @click="resetCredentials" class="btn-reset">인증 정보 초기화</button>
+          </div>
+        </div>
+        <div class="setting-card">
+          <h3 class="setting-section-title">앱 정보</h3>
+          <div class="setting-row">
+            <label class="setting-label">버전</label>
+            <div class="setting-value">0.1.0</div>
+          </div>
+          <div class="setting-row">
+            <label class="setting-label">빌드</label>
+            <div class="setting-value">Tauri v2 + Vue 3</div>
+          </div>
+        </div>
+      </div>
     </main>
 
     <main class="main-container log-container" v-if="currentTab === 'log'">
@@ -679,6 +744,35 @@ onMounted(() => {
             </div>
           </div>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <div v-if="isSetupOpen" class="modal-overlay setup-overlay">
+    <div class="setup-modal" @click.stop>
+      <header class="modal-header">
+        <h3>Jira 인증 설정</h3>
+      </header>
+      <div class="setup-body">
+        <p class="setup-desc">Jira API 연동을 위해 이메일과 API Token을 입력하세요.</p>
+        <div class="setup-field">
+          <label>Atlassian Email</label>
+          <input v-model="setupEmail" type="email" placeholder="name@company.com" class="setup-input" />
+        </div>
+        <div class="setup-field">
+          <label>API Token</label>
+          <input v-model="setupApiToken" type="password" placeholder="API Token을 붙여넣으세요" class="setup-input" />
+        </div>
+        <div class="setup-guide">
+          <p>API Token 발급 방법:</p>
+          <ol>
+            <li><a href="#" @click.prevent="open('https://id.atlassian.com/manage-profile/security/api-tokens')">Atlassian API Token 관리 페이지</a>에 접속</li>
+            <li><strong>Create API token</strong> 클릭</li>
+            <li>Label 입력 후 <strong>Create</strong> 클릭</li>
+            <li>생성된 토큰을 복사하여 위 입력란에 붙여넣기</li>
+          </ol>
+        </div>
+        <button @click="saveSetup" :disabled="!setupEmail.trim() || !setupApiToken.trim()" class="btn-setup-save">저장 후 시작</button>
       </div>
     </div>
   </div>
@@ -1002,6 +1096,138 @@ clickable-ticket {
   color: white;
   text-decoration: underline;
 }
+
+/* 셋업 모달 */
+.setup-overlay {
+  z-index: 2000;
+}
+.setup-modal {
+  background: white;
+  width: 480px;
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 0 10px 40px rgba(0,0,0,0.3);
+}
+.setup-body {
+  padding: 24px;
+}
+.setup-desc {
+  margin: 0 0 20px;
+  font-size: 0.9rem;
+  color: #666;
+}
+.setup-field {
+  margin-bottom: 16px;
+}
+.setup-field label {
+  display: block;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #333;
+  margin-bottom: 6px;
+}
+.setup-input {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  box-sizing: border-box;
+  transition: border-color 0.2s;
+}
+.setup-input:focus {
+  outline: none;
+  border-color: var(--kurly-purple);
+}
+.setup-guide {
+  background: #f9f7fb;
+  border: 1px solid #efe4f5;
+  border-radius: 8px;
+  padding: 14px;
+  margin-bottom: 20px;
+  font-size: 0.82rem;
+  color: #555;
+}
+.setup-guide p { margin: 0 0 8px; font-weight: 600; }
+.setup-guide ol { margin: 0; padding-left: 18px; }
+.setup-guide li { margin-bottom: 4px; }
+.setup-guide a { color: var(--kurly-purple); font-weight: 600; }
+.btn-setup-save {
+  width: 100%;
+  padding: 12px;
+  background: var(--kurly-purple);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-size: 0.95rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+.btn-setup-save:hover { background: var(--kurly-purple-light); }
+.btn-setup-save:disabled { background: #ccc; cursor: not-allowed; }
+
+/* Setting 탭 */
+.setting-body {
+  flex: 1;
+  padding: 20px 40px 40px;
+  overflow-y: auto;
+}
+.setting-card {
+  background: var(--white);
+  border-radius: 12px;
+  padding: 24px;
+  margin-bottom: 20px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+}
+.setting-section-title {
+  margin: 0 0 16px;
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--kurly-purple);
+  border-bottom: 1px solid #eee;
+  padding-bottom: 10px;
+}
+.setting-row {
+  display: flex;
+  align-items: center;
+  padding: 10px 0;
+  border-bottom: 1px solid #f5f5f5;
+}
+.setting-row:last-child { border-bottom: none; }
+.setting-label {
+  width: 120px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #666;
+  flex-shrink: 0;
+}
+.setting-value {
+  font-size: 0.9rem;
+  color: var(--primary-text);
+}
+.setting-token {
+  font-family: 'SF Mono', 'Menlo', monospace;
+  font-size: 0.8rem;
+  color: #888;
+}
+.setting-actions {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid #eee;
+}
+.btn-reset {
+  padding: 8px 20px;
+  background: #e74c3c;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+.btn-reset:hover { background: #c0392b; }
 
 /* Log 탭 */
 .log-body {
