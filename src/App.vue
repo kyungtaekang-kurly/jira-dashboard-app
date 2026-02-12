@@ -4,8 +4,18 @@ import { fetch } from '@tauri-apps/plugin-http';
 import { open } from '@tauri-apps/plugin-shell';
 import { checkForUpdates } from './update-checker.js';
 
+// --- 0. 앱 로그 ---
+const appLog = ref<string[]>([]);
+const log = (msg: string) => {
+  const ts = new Date().toLocaleTimeString();
+  appLog.value.push(`[${ts}] ${msg}`);
+  console.log(msg);
+};
+const clearLog = () => { appLog.value = []; };
+const logText = computed(() => appLog.value.join('\n'));
+
 // --- 1. 상태 관리 ---
-const currentTab = ref<'epic' | 'idea'>('idea');
+const currentTab = ref<'epic' | 'idea' | 'log'>('idea');
 const tickets = ref<any[]>([]);
 const epicInfo = ref<any>(null);
 const isLoading = ref(false);
@@ -23,7 +33,8 @@ const selectedTicketKey = ref('');
 // --- 2. 설정 정보 ---
 const JIRA_DOMAIN = 'kurly0521.atlassian.net';
 const EMAIL = 'kyungtae.kang@kurlycorp.com';
-const API_TOKEN = 'ATATT3xFfGF0E0fJ9Md0skd3LdAw1qa7dHMXebL3ogaYzFWgx2bqKavQCdii7O7EEGfZHArMi6in1Yh-GDcEcRfxca2GBdzdPAJhKMwjDVdL0eZopB-AgJF413bRu3OGDgFi02w4-40b0SpCo8ea5zcxpZxyj0GZlKQdq5lvzkoOAqp582VGFms=B9707145';
+// API_TOKEN_FOR_KURLY_JIRA
+const API_TOKEN = 'ATATT3xFfGF05a7i1qC6UT1KtZaop3bILIEpvNUPIzpNn70hnVJBmXWbxXfU5FW0M9PYG1L3GIIPg47KHo6i8sIb-VAhy4HRnMoGP6gdhp7TZFrKy-BBg_p4tU7zPuVUznuDRARVXkqZa2Z2v7oio-kx93JYxGzO_OmFHYK9Ip8HoOpoKC9JrzU=3B92C174';
 const EPIC_KEY = 'FPP-72';
 const authHeader = btoa(`${EMAIL}:${API_TOKEN}`);
 const ORG_FIELD = 'customfield_20061'; // 수행조직 필드 ID
@@ -67,6 +78,30 @@ const loadData = async () => {
   tickets.value = [];
 
   try {
+    // 진단: 현재 사용자 정보 확인
+    const meRes = await fetch(`https://${JIRA_DOMAIN}/rest/api/3/myself`, {
+      method: 'GET',
+      headers: { 'Authorization': `Basic ${authHeader}`, 'Accept': 'application/json' }
+    });
+    if (meRes.ok) {
+      const me: any = await meRes.json();
+      log(`[진단] 로그인 사용자: ${me.displayName} (${me.emailAddress})`);
+    } else {
+      log(`[진단] 사용자 확인 실패: ${meRes.status} ${meRes.statusText}`);
+    }
+
+    // 진단: FPP 프로젝트 접근 확인
+    const projRes = await fetch(`https://${JIRA_DOMAIN}/rest/api/3/project/FPP`, {
+      method: 'GET',
+      headers: { 'Authorization': `Basic ${authHeader}`, 'Accept': 'application/json' }
+    });
+    if (projRes.ok) {
+      const proj: any = await projRes.json();
+      log(`[진단] FPP 프로젝트 접근 OK: ${proj.name}`);
+    } else {
+      log(`[진단] FPP 프로젝트 접근 실패: ${projRes.status} - 프로젝트가 삭제/이름변경/권한제한 되었을 수 있음`);
+    }
+
     const targetTeams = ["재고", "입고", "발주", "상품"];
     let allIssues: any[] = [];
     const fields = `summary,status,issuetype,assignee,priority,${ORG_FIELD},${ASSIGNEE_FIELD}`;
@@ -93,25 +128,42 @@ const loadData = async () => {
         }
       });
 
+      log(`[HTTP] ${teamName} 요청 → 상태: ${response.status} ${response.statusText}`);
+      log(`[JQL] ${teamJql}`);
       if (response.ok) {
         const data: any = await response.json();
         const issues = data.issues || [];
-        console.log(`[확인] ${teamName} 조직 결과: ${issues.length}건`);
+        log(`[확인] ${teamName} 조직 결과: ${issues.length}건 (total: ${data.total || 0})`);
         allIssues = [...allIssues, ...issues];
+      } else {
+        const body = await response.text();
+        if (response.status === 401) {
+          log(`[인증 실패] API 토큰이 유효하지 않습니다. 토큰을 재발급하세요. (https://id.atlassian.com/manage-profile/security/api-tokens)`);
+        }
+        log(`[에러] ${teamName} 응답 상태: ${response.status} / 본문: ${body.substring(0, 300)}`);
       }
     }
 
     // 만약 조직별 데이터가 하나도 없다면, 안전장치로 전체 프로젝트 100개 로드
     if (allIssues.length === 0) {
-      console.warn("조직별 데이터를 찾지 못해 전체 데이터를 로드합니다.");
+      log("[경고] 조직별 데이터를 찾지 못해 전체 데이터를 로드합니다.");
       const fallbackUrl = `https://${JIRA_DOMAIN}/rest/api/3/search/jql?jql=project=FPP ORDER BY created DESC&maxResults=300&fields=${fields}`;
       const res = await fetch(fallbackUrl, {
         method: 'GET',
         headers: { 'Authorization': `Basic ${authHeader}` }
       });
+      log(`[HTTP] 전체 데이터 폴백 → 상태: ${res.status} ${res.statusText}`);
+      log(`[URL] ${fallbackUrl}`);
       if (res.ok) {
         const data: any = await res.json();
         allIssues = data.issues || [];
+        log(`[확인] 폴백 결과: ${allIssues.length}건 (total: ${data.total || 0})`);
+      } else {
+        const body = await res.text();
+        if (res.status === 401) {
+          log(`[인증 실패] API 토큰이 유효하지 않습니다. 토큰을 재발급하세요. (https://id.atlassian.com/manage-profile/security/api-tokens)`);
+        }
+        log(`[에러] 폴백 응답 상태: ${res.status} / 본문: ${body.substring(0, 300)}`);
       }
     }
 
@@ -132,7 +184,7 @@ const loadData = async () => {
     }
 
   } catch (error) {
-    console.error('데이터 로드 중 치명적 오류:', error);
+    log(`[치명적 오류] 데이터 로드 실패: ${error}`);
   } finally {
     isLoading.value = false;
   }
@@ -143,9 +195,9 @@ const openJiraIssue = async (key: string) => {
   await open(url);
 };
 
-const switchTab = (tab: 'epic' | 'idea') => {
+const switchTab = (tab: 'epic' | 'idea' | 'log') => {
   currentTab.value = tab;
-  loadData();
+  if (tab !== 'log') loadData();
 };
 
 const getStatusClass = (statusName: string) => {
@@ -192,7 +244,7 @@ const loadAllSubTaskComments = async (ticket: any) => {
         issueKeys = [...issueKeys, ...subKeys];
       }
     } catch (e) {
-      console.warn("하위 태스크 검색 실패 (무시하고 진행):", e);
+      log(`[경고] 하위 태스크 검색 실패 (무시하고 진행): ${e}`);
     }
 
     // 2. 댓글 병렬 로드
@@ -223,7 +275,7 @@ const loadAllSubTaskComments = async (ticket: any) => {
     );
 
   } catch (error) {
-    console.error('댓글 로드 중 치명적 오류:', error);
+    log(`[치명적 오류] 댓글 로드 실패: ${error}`);
   } finally {
     isCommentsLoading.value = false;
   }
@@ -263,7 +315,7 @@ const getLinkedIssueKeys = async (ticketKey: string): Promise<string[]> => {
 
     return keys;
   } catch (e) {
-    console.error("이슈 링크 로드 실패:", e);
+    log(`[에러] 이슈 링크 로드 실패: ${e}`);
     return [];
   }
 };
@@ -315,7 +367,7 @@ const loadLinkedEpicComments = async (ticket: any) => {
 
     // 4. 수집된 모든 티켓(FPP-72, COOP-4331, COOP-4712 등)의 댓글 병렬 로드
     const finalKeys = Array.from(allRelatedKeys);
-    console.log("댓글 수집 대상(COOP-4712 포함 여부 확인):", finalKeys);
+    log(`[정보] 댓글 수집 대상: ${finalKeys.join(', ')}`);
 
     const results = await Promise.all(finalKeys.map(async (key) => {
       const res = await fetch(`https://${JIRA_DOMAIN}/rest/api/3/issue/${key}/comment`, {
@@ -338,7 +390,7 @@ const loadLinkedEpicComments = async (ticket: any) => {
     );
 
   } catch (error) {
-    console.error('하위 댓글 통합 로드 실패:', error);
+    log(`[에러] 하위 댓글 통합 로드 실패: ${error}`);
   } finally {
     isCommentsLoading.value = false;
   }
@@ -367,7 +419,7 @@ const toggleGroup = (key: string) => {
 };
 
 const loadTicketTree = async (rootTicket: any) => {
-  console.log("트리 로드 시작: ", rootTicket.key);
+  log(`[정보] 트리 로드 시작: ${rootTicket.key}`);
   selectedTicketKey.value = rootTicket.key;
   isTreeModalOpen.value = true;
   isTreeLoading.value = true;
@@ -411,7 +463,7 @@ const loadTicketTree = async (rootTicket: any) => {
       });
     }
   } catch (error) {
-    console.error('트리 로드 실패:', error);
+    log(`[에러] 트리 로드 실패: ${error}`);
   } finally {
     isTreeLoading.value = false;
   }
@@ -457,10 +509,11 @@ onMounted(() => {
       <nav class="nav-menu">
         <div class="nav-item" :class="{ active: currentTab === 'epic' }" @click="switchTab('epic')">📋 Epic Explorer</div>
         <div class="nav-item" :class="{ active: currentTab === 'idea' }" @click="switchTab('idea')">💡 Idea Explorer</div>
+        <div class="nav-item" :class="{ active: currentTab === 'log' }" @click="switchTab('log')">📝 Log</div>
       </nav>
     </aside>
 
-    <main class="main-container">
+    <main class="main-container" v-if="currentTab !== 'log'">
       <header class="main-header">
         <div class="header-left">
           <h2 class="title-text">{{ epicInfo?.fields?.summary || 'Loading...' }}</h2>
@@ -530,6 +583,20 @@ onMounted(() => {
           </tbody>
         </table>
       </section>
+    </main>
+
+    <main class="main-container log-container" v-if="currentTab === 'log'">
+      <header class="main-header">
+        <div class="header-left">
+          <h2 class="title-text">App Log</h2>
+        </div>
+        <div class="header-actions">
+          <button @click="clearLog" class="btn-refresh">초기화</button>
+        </div>
+      </header>
+      <div class="log-body">
+        <textarea class="log-textarea" readonly :value="logText"></textarea>
+      </div>
     </main>
   </div>
 
@@ -931,8 +998,33 @@ clickable-ticket {
 }
 
 .clickable-ticket:hover {
-  background: var(--kurly-purple); /* 호버 시 진한 보라색 */
-  color: white; /* 호버 시 흰색 글씨 */
+  background: var(--kurly-purple);
+  color: white;
   text-decoration: underline;
+}
+
+/* Log 탭 */
+.log-body {
+  flex: 1;
+  padding: 20px 40px 40px;
+  overflow: hidden;
+  display: flex;
+}
+.log-textarea {
+  flex: 1;
+  font-family: 'SF Mono', 'Menlo', 'Monaco', monospace;
+  font-size: 0.85rem;
+  line-height: 1.6;
+  padding: 16px;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  background: #1e1e1e;
+  color: #d4d4d4;
+  resize: none;
+  white-space: pre;
+  overflow: auto;
+}
+.log-textarea:focus {
+  outline: 2px solid var(--kurly-purple);
 }
 </style>
