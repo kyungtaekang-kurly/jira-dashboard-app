@@ -641,7 +641,7 @@ onMounted(() => {
           <h3 class="setting-section-title">앱 정보</h3>
           <div class="setting-row">
             <label class="setting-label">버전</label>
-            <div class="setting-value">0.1.0</div>
+            <div class="setting-value">0.4.0</div>
           </div>
           <div class="setting-row">
             <label class="setting-label">빌드</label>
