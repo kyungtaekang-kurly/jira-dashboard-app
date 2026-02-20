@@ -21,9 +21,10 @@ const tickets = ref<any[]>([]);
 const epicInfo = ref<any>(null);
 const isLoading = ref(false);
 
-// 필터 상태 (함수 밖으로 이동)
+// 필터 상태
 const selectedStatus = ref<string>('all');
 const selectedTeam = ref<string>('전체 조직');
+const subjectSearchQuery = ref('');
 
 // 모달 상태
 const isCommentModalOpen = ref(false);
@@ -95,8 +96,11 @@ const filteredTickets = computed(() => {
     const orgVal = t.fields?.[ORG_FIELD];
     const teamName = Array.isArray(orgVal) ? orgVal[0]?.value : (orgVal?.value || orgVal);
     const teamMatch = selectedTeam.value === '전체 조직' || teamName === selectedTeam.value;
+    // Subject 검색 매칭
+    const query = subjectSearchQuery.value.trim().toLowerCase();
+    const subjectMatch = !query || (t.fields?.summary || '').toLowerCase().includes(query);
 
-    return statusMatch && teamMatch;
+    return statusMatch && teamMatch && subjectMatch;
   });
 });
 
@@ -542,6 +546,7 @@ onMounted(() => {
           <h2 class="title-text">{{ epicInfo?.fields?.summary || 'Loading...' }}</h2>
         </div>
         <div class="header-actions">
+          <input v-model="subjectSearchQuery" type="text" placeholder="Subject 검색..." class="subject-search-input" />
           <select v-model="selectedTeam" class="status-filter">
             <option v-for="team in availableTeams" :key="team" :value="team">{{ team }}</option>
           </select>
@@ -564,7 +569,7 @@ onMounted(() => {
           <thead>
           <tr>
             <th style="width: 100px;">KEY</th>
-            <th style="width: 140px;">수행조직</th> <th>SUMMARY</th>
+            <th style="width: 140px;">수행조직</th> <th>Subject</th>
             <th style="width: 120px;">STATUS</th>
             <th style="width: 120px;">JPD댓글보기</th>
             <th style="width: 120px;">하위Ticket</th>
@@ -580,7 +585,7 @@ onMounted(() => {
                   {{ Array.isArray(ticket.fields?.[ORG_FIELD]) ? ticket.fields?.[ORG_FIELD][0]?.value : (ticket.fields?.[ORG_FIELD]?.value || '-') }}
                 </span>
             </td>
-            <td class="td-summary">{{ ticket.fields?.summary }}</td>
+            <td class="td-summary" v-html="highlightText(ticket.fields?.summary || '', subjectSearchQuery)"></td>
             <td><span :class="['badge', getStatusClass(ticket.fields?.status?.name)]">{{ ticket.fields?.status?.name }}</span></td>
             <td class="td-actions">
               <button @click.stop="loadAllSubTaskComments(ticket)" class="btn-comment">
@@ -641,7 +646,7 @@ onMounted(() => {
           <h3 class="setting-section-title">앱 정보</h3>
           <div class="setting-row">
             <label class="setting-label">버전</label>
-            <div class="setting-value">0.4.0</div>
+            <div class="setting-value">0.5.0</div>
           </div>
           <div class="setting-row">
             <label class="setting-label">빌드</label>
@@ -1008,6 +1013,22 @@ body {
   transition: border-color 0.15s;
   min-width: 120px;
 }
+.subject-search-input {
+  padding: var(--space-sm) var(--space-md);
+  border: 1px solid var(--gray-300);
+  border-radius: var(--radius-md);
+  font-size: 0.85rem;
+  color: var(--gray-800);
+  min-width: 180px;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.subject-search-input:focus {
+  outline: none;
+  border-color: var(--kurly-purple);
+  box-shadow: 0 0 0 3px var(--kurly-purple-pale);
+}
+.subject-search-input::placeholder { color: var(--gray-400); }
+
 .status-filter:hover { border-color: var(--kurly-purple); }
 .status-filter:focus { outline: none; border-color: var(--kurly-purple); box-shadow: 0 0 0 3px var(--kurly-purple-pale); }
 
