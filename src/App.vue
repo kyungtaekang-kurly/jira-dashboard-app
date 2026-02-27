@@ -22,7 +22,27 @@ const epicInfo = ref<any>(null);
 const isLoading = ref(false);
 
 // 필터 상태
-const selectedStatus = ref<string>('all');
+const selectedStatuses = ref<string[]>([]);
+const isStatusDropdownOpen = ref(false);
+
+const toggleStatusSelection = (status: string) => {
+  const idx = selectedStatuses.value.indexOf(status);
+  if (idx === -1) {
+    selectedStatuses.value.push(status);
+  } else {
+    selectedStatuses.value.splice(idx, 1);
+  }
+};
+
+const selectAllStatuses = () => {
+  selectedStatuses.value = [];
+};
+
+const statusFilterLabel = computed(() => {
+  if (selectedStatuses.value.length === 0) return `모든 상태 (${tickets.value.length})`;
+  if (selectedStatuses.value.length === 1) return selectedStatuses.value[0];
+  return `${selectedStatuses.value.length}개 상태 선택됨`;
+});
 const selectedTeam = ref<string>('전체 조직');
 const subjectSearchQuery = ref('');
 
@@ -91,7 +111,7 @@ const availableTeams = computed(() => {
 const filteredTickets = computed(() => {
   return tickets.value.filter(t => {
     // 상태 매칭
-    const statusMatch = selectedStatus.value === 'all' || t.fields?.status?.name === selectedStatus.value;
+    const statusMatch = selectedStatuses.value.length === 0 || selectedStatuses.value.includes(t.fields?.status?.name);
     // 조직 매칭
     const orgVal = t.fields?.[ORG_FIELD];
     const teamName = Array.isArray(orgVal) ? orgVal[0]?.value : (orgVal?.value || orgVal);
@@ -118,6 +138,11 @@ const loadData = async () => {
     if (meRes.ok) {
       const me: any = await meRes.json();
       log(`[진단] 로그인 사용자: ${me.displayName} (${me.emailAddress})`);
+    } else if (meRes.status === 401) {
+      log(`[인증 실패] API 토큰이 만료되었거나 잘못되었습니다. Setting 탭에서 인증 정보를 다시 설정해주세요.`);
+      log(`[안내] API 토큰 재발급: https://id.atlassian.com/manage-profile/security/api-tokens`);
+      isLoading.value = false;
+      return;
     } else {
       log(`[진단] 사용자 확인 실패: ${meRes.status} ${meRes.statusText}`);
     }
@@ -139,40 +164,42 @@ const loadData = async () => {
     const fields = `summary,status,issuetype,assignee,priority,${ORG_FIELD},${ASSIGNEE_FIELD}`;
 
     for (const teamName of targetTeams) {
-      // 1. JQL 문법 수정: cf[ID] 대신 customfield_ID 사용
-      // 2. 검색 연산자: '~'(포함)은 인덱싱 지연이 있을 수 있으니 'IN' 또는 '=' 시도
-      const teamJql = `project = FPP AND customfield_20061 = "${teamName}" ORDER BY created DESC`;
+      try {
+        const teamJql = `project = FPP AND customfield_20061 = "${teamName}" ORDER BY created DESC`;
 
-      const queryParams = new URLSearchParams({
-        jql: teamJql,
-        fields: fields,
-        maxResults: "100"
-      });
+        const queryParams = new URLSearchParams({
+          jql: teamJql,
+          fields: fields,
+          maxResults: "100"
+        });
 
-      const fullUrl = `https://${JIRA_DOMAIN}/rest/api/3/search/jql?${queryParams.toString()}`;
+        const fullUrl = `https://${JIRA_DOMAIN}/rest/api/3/search/jql?${queryParams.toString()}`;
 
-      const response = await fetch(fullUrl, {
-        method: 'GET',
-        headers: {
-          'Authorization': `Basic ${authHeader.value}`,
-          'Accept': 'application/json',
-          'X-Atlassian-Token': 'no-check'
+        const response = await fetch(fullUrl, {
+          method: 'GET',
+          headers: {
+            'Authorization': `Basic ${authHeader.value}`,
+            'Accept': 'application/json',
+            'X-Atlassian-Token': 'no-check'
+          }
+        });
+
+        log(`[HTTP] ${teamName} 요청 → 상태: ${response.status} ${response.statusText}`);
+        log(`[JQL] ${teamJql}`);
+        if (response.ok) {
+          const data: any = await response.json();
+          const issues = data.issues || [];
+          log(`[확인] ${teamName} 조직 결과: ${issues.length}건 (total: ${data.total || 0})`);
+          allIssues = [...allIssues, ...issues];
+        } else {
+          const body = await response.text();
+          if (response.status === 401) {
+            log(`[인증 실패] API 토큰이 유효하지 않습니다. 토큰을 재발급하세요. (https://id.atlassian.com/manage-profile/security/api-tokens)`);
+          }
+          log(`[에러] ${teamName} 응답 상태: ${response.status} / 본문: ${body.substring(0, 300)}`);
         }
-      });
-
-      log(`[HTTP] ${teamName} 요청 → 상태: ${response.status} ${response.statusText}`);
-      log(`[JQL] ${teamJql}`);
-      if (response.ok) {
-        const data: any = await response.json();
-        const issues = data.issues || [];
-        log(`[확인] ${teamName} 조직 결과: ${issues.length}건 (total: ${data.total || 0})`);
-        allIssues = [...allIssues, ...issues];
-      } else {
-        const body = await response.text();
-        if (response.status === 401) {
-          log(`[인증 실패] API 토큰이 유효하지 않습니다. 토큰을 재발급하세요. (https://id.atlassian.com/manage-profile/security/api-tokens)`);
-        }
-        log(`[에러] ${teamName} 응답 상태: ${response.status} / 본문: ${body.substring(0, 300)}`);
+      } catch (e) {
+        log(`[경고] ${teamName} 요청 실패 (건너뜀): ${e}`);
       }
     }
 
@@ -526,6 +553,7 @@ onMounted(() => {
     loadData();
   }
   checkForUpdates();
+  document.addEventListener('click', () => { isStatusDropdownOpen.value = false; });
 });
 </script>
 
@@ -550,10 +578,22 @@ onMounted(() => {
           <select v-model="selectedTeam" class="status-filter">
             <option v-for="team in availableTeams" :key="team" :value="team">{{ team }}</option>
           </select>
-          <select v-model="selectedStatus" class="status-filter">
-            <option value="all">모든 상태 ({{ tickets.length }})</option>
-            <option v-for="status in availableStatuses.filter(s => s !== 'all')" :key="status" :value="status">{{ status }}</option>
-          </select>
+          <div class="multi-select-wrapper" @click.stop>
+            <button class="multi-select-trigger" @click="isStatusDropdownOpen = !isStatusDropdownOpen">
+              <span>{{ statusFilterLabel }}</span>
+              <span class="multi-select-arrow" :class="{ open: isStatusDropdownOpen }">▾</span>
+            </button>
+            <div v-if="isStatusDropdownOpen" class="multi-select-dropdown">
+              <label class="multi-select-option" @click="selectAllStatuses()">
+                <input type="checkbox" :checked="selectedStatuses.length === 0" readonly />
+                <span>모든 상태 ({{ tickets.length }})</span>
+              </label>
+              <label v-for="status in availableStatuses.filter(s => s !== 'all')" :key="status" class="multi-select-option" @click.prevent="toggleStatusSelection(status)">
+                <input type="checkbox" :checked="selectedStatuses.includes(status)" />
+                <span>{{ status }}</span>
+              </label>
+            </div>
+          </div>
           <button @click="loadData" :disabled="isLoading" class="btn-refresh">🔄 업데이트</button>
         </div>
       </header>
@@ -1031,6 +1071,66 @@ body {
 
 .status-filter:hover { border-color: var(--kurly-purple); }
 .status-filter:focus { outline: none; border-color: var(--kurly-purple); box-shadow: 0 0 0 3px var(--kurly-purple-pale); }
+
+/* ---- Multi-Select Dropdown ---- */
+.multi-select-wrapper {
+  position: relative;
+  min-width: 160px;
+}
+.multi-select-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-sm);
+  width: 100%;
+  background: #fff;
+  border: 1px solid var(--gray-300);
+  border-radius: var(--radius-md);
+  padding: var(--space-sm) var(--space-md);
+  font-size: 0.85rem;
+  color: var(--gray-800);
+  cursor: pointer;
+  transition: border-color 0.15s;
+  white-space: nowrap;
+}
+.multi-select-trigger:hover { border-color: var(--kurly-purple); }
+.multi-select-arrow {
+  font-size: 0.75rem;
+  transition: transform 0.2s;
+}
+.multi-select-arrow.open { transform: rotate(180deg); }
+.multi-select-dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  min-width: 100%;
+  max-height: 280px;
+  overflow-y: auto;
+  background: #fff;
+  border: 1px solid var(--gray-300);
+  border-radius: var(--radius-md);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+  z-index: 100;
+  padding: var(--space-xs) 0;
+}
+.multi-select-option {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-sm) var(--space-md);
+  font-size: 0.85rem;
+  color: var(--gray-800);
+  cursor: pointer;
+  transition: background 0.1s;
+  white-space: nowrap;
+}
+.multi-select-option:hover { background: var(--kurly-purple-pale, #f3e8ff); }
+.multi-select-option input[type="checkbox"] {
+  accent-color: var(--kurly-purple);
+  pointer-events: none;
+  width: 15px;
+  height: 15px;
+}
 
 /* ---- Summary Bar ---- */
 .summary-bar {
